@@ -1,0 +1,11 @@
+[[constraint]]
+  name = "github.com/pkg/errors"
+  version = "< 0.9.0"
+
+[[constraint]]
+  name = "golang.org/x/sys"
+  branch = "master"
+
+[prune]
+  go-tests = true
+  unused-packages = true
