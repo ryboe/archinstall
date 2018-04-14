@@ -30,6 +30,7 @@ const (
 	systemdNetworkDir  = "/etc/systemd/network/"
 	systemdNetworkName = "50-wired.network"
 	username           = "y0ssar1an"
+	vimPlugURL         = "https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim"
 	yayGitHubPath      = "github.com/Jguer/yay"
 	zshPath            = "/usr/bin/zsh"
 )
@@ -192,11 +193,18 @@ func phase2() error {
 	log.Println("fonts configured")
 
 	log.Println("creating go directories...")
-	err = configureGoEnv()
+	err = setupGoEnv()
 	if err != nil {
 		return err
 	}
 	log.Println("go directories created")
+
+	log.Println("installing rust...")
+	err = installRust()
+	if err != nil {
+		return err
+	}
+	log.Println("rust installed")
 
 	log.Println("installing yay AUR helper...")
 	err = installAURHelper()
@@ -204,6 +212,13 @@ func phase2() error {
 		return err
 	}
 	log.Println("AUR helper yay installed")
+
+	log.Println("installing chrome...")
+	err = installChrome()
+	if err != nil {
+		return err
+	}
+	log.Println("chrome installed")
 
 	log.Println("installing gitprompt...")
 	err = installGitprompt()
@@ -218,6 +233,13 @@ func phase2() error {
 		return err
 	}
 	log.Println("~/.config directory created. config files downloaded")
+
+	log.Println("installing vim-plug...")
+	err = installVimPlug()
+	if err != nil {
+		return err
+	}
+	log.Println("vim-plug installed")
 
 	log.Printf("setting ownership of /home/%[1]s to %[1]s...\n", username)
 	homeDir := path.Join("/home/", username)
@@ -332,6 +354,7 @@ func installPkgs() error {
 		"noto-fonts-extra",
 		"otf-font-awesome",
 		"rng-tools",
+		"rustup",
 		"sway",
 		"terminus-font",
 		"termite",
@@ -395,7 +418,39 @@ func configureMkinitcpio() error {
 	return sh.Command(1*time.Minute, "mkinitcpio", "-p", "linux").Run()
 }
 
-func configureGoEnv() error {
+func configureFonts() error {
+	const (
+		fontsDir      = "/etc/fonts/conf.d/"
+		fontsAvailDir = "/etc/fonts/conf.avail/"
+	)
+
+	slightHintingSymlink := path.Join(fontsDir, "10-hinting-slight.conf")
+	err := os.Remove(slightHintingSymlink)
+	if err != nil {
+		return err
+	}
+
+	links := []string{
+		"10-hinting-full.conf",
+		"10-subpixel-rgb.conf",
+		"66-noto-mono.conf",
+		"66-noto-sans.conf",
+		"66-noto-serif.conf",
+	}
+
+	for _, lnk := range links {
+		availLnk := path.Join(fontsAvailDir, lnk)
+		confLnk := path.Join(fontsDir, lnk)
+		err = os.Symlink(availLnk, confLnk)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func setupGoEnv() error {
 	gopath := path.Join("/home/", username, "/go")
 
 	var err error
@@ -407,6 +462,101 @@ func configureGoEnv() error {
 	}
 
 	return recursiveChown(gopath, username, "users")
+}
+
+func installRust() (err error) {
+	const toolchainInstallTimeout = 10 * time.Minute
+	err = sh.Command(toolchainInstallTimeout, "rustup", "toolchain", "install", "stable").Run()
+	if err != nil {
+		return err
+	}
+
+	err = sh.Command(toolchainInstallTimeout, "rustup", "toolchain", "install", "nightly").Run()
+	if err != nil {
+		return err
+	}
+
+	const switchToolchainTimeout = 10 * time.Second
+	err = sh.Command(switchToolchainTimeout, "rustup", "default", "nightly").Run()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if cerr := sh.Command(switchToolchainTimeout, "rustup", "default", "stable").Run(); err == nil {
+			err = cerr
+		}
+	}()
+
+	return installRustUtils()
+}
+
+func installRustUtils() (err error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if cderr := os.Chdir(wd); err == nil {
+			err = cderr
+		}
+	}()
+
+	err = installi3Status()
+	if err != nil {
+		return err
+	}
+
+	return installRipgrep()
+}
+
+func installi3Status() error {
+	err := cloneRustProject("greshake/i3status-rs")
+	if err != nil {
+		return err
+	}
+
+	dir := path.Join("/home", username, "rust/github.com/greshake/i3status-rs")
+	err = os.Chdir(dir)
+	if err != nil {
+		return err
+	}
+
+	return sh.Command(5*time.Minute, "cargo", "install").Run()
+}
+
+func installRipgrep() (err error) {
+	err = cloneRustProject("BurntSushi/ripgrep")
+	if err != nil {
+		return err
+	}
+
+	dir := path.Join("/home", username, "rust/github.com/BurntSushi/ripgrep")
+	err = os.Chdir(dir)
+	if err != nil {
+		return err
+	}
+
+	cmd := sh.Command(5*time.Minute, "cargo", "build", "--release", "--features", "simd-accel avx-accel")
+	cmd.Env = []string{"RUSTFLAGS=-C target-cpu=native"}
+
+	err = cmd.Run()
+	if err != nil {
+		return err
+	}
+
+	dst := path.Join("/home", username, ".cargo/bin/rg")
+	src := path.Join(dir, "target/release/rg")
+	return sh.Copy(dst, src)
+}
+
+func cloneRustProject(name string) error {
+	p := path.Join("/home", username, "rust/github.com/", name)
+	if err := os.MkdirAll(p, 0755); err != nil {
+		return err
+	}
+
+	githubURL := fmt.Sprintf("https://github.com/%s", name)
+	return sh.Command(2*time.Minute, "git", "clone", githubURL, path.Dir(p)).Run()
 }
 
 // enableBBR enables BBR TCP congestion control. BBR prevents bufferbloat and
@@ -461,16 +611,41 @@ func recursiveChown(path, username, groupname string) error {
 }
 
 func downloadBackgroundImage() (err error) {
-	client := http.Client{Timeout: 1 * time.Minute}
+	const dst = "/usr/share/backgrounds/arch_linux_black_3840x2160.png"
 
-	resp, err := client.Get(backgroundImageURL)
+	return downloadFile(1*time.Minute, dst, backgroundImageURL)
+}
+
+func installAURHelper() error {
+	return sh.Command(1*time.Minute, "go", "get", "-u", yayGitHubPath).Run()
+}
+
+func installGitprompt() error {
+	return sh.Command(1*time.Minute, "go", "get", "-u", "github.com/y0ssar1an/gitprompt").Run()
+}
+
+func installVimPlug() (err error) {
+	home := path.Join("/home/", username)
+	vimPlugDst := path.Join(home, ".local/share/nvim/site/autoload/plug.vim")
+
+	return downloadFile(1*time.Minute, vimPlugDst, vimPlugURL)
+}
+
+func downloadFile(timeout time.Duration, dst, url string) (err error) {
+	client := http.Client{Timeout: timeout}
+
+	resp, err := client.Get(url)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	const dst = "/usr/share/backgrounds/arch_linux_black_3840x2160.png"
-	outf, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0444)
+	err = os.MkdirAll(path.Dir(dst), 0750)
+	if err != nil {
+		return err
+	}
+
+	outf, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0744)
 	if err != nil {
 		return err
 	}
@@ -484,42 +659,6 @@ func downloadBackgroundImage() (err error) {
 	return err
 }
 
-func installAURHelper() error {
-	return sh.Command(1*time.Minute, "go", "get", "-u", yayGitHubPath).Run()
-}
-
-func installGitprompt() error {
-	return sh.Command(1*time.Minute, "go", "get", "-u", "github.com/y0ssar1an/gitprompt").Run()
-}
-
-func configureFonts() error {
-	const (
-		fontsDir      = "/etc/fonts/conf.d/"
-		fontsAvailDir = "/etc/fonts/conf.avail/"
-	)
-
-	lnkSlightHinting := path.Join(fontsDir, "10-hinting-slight.conf")
-	err := os.Remove(lnkSlightHinting)
-	if err != nil {
-		return err
-	}
-
-	links := []string{
-		"10-hinting-full.conf",
-		"10-subpixel-rgb.conf",
-		"66-noto-mono.conf",
-		"66-noto-sans.conf",
-		"66-noto-serif.conf",
-	}
-
-	for _, lnk := range links {
-		availLnk := path.Join(fontsAvailDir, lnk)
-		confLnk := path.Join(fontsDir, lnk)
-		err = os.Symlink(availLnk, confLnk)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+func installChrome() error {
+	return sh.Command(5*time.Minute, "yay", "-Sy", "--noconfirm", "google-chrome").Run()
 }

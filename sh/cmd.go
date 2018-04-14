@@ -17,6 +17,7 @@ type Cmd struct {
 	Stdin   io.Reader
 	Stdout  io.Writer
 	Stderr  io.Writer
+	Env     []string
 }
 
 // Command initializes a Cmd. It will panic if timeout is negative.
@@ -57,6 +58,8 @@ func (c *Cmd) Run() error {
 	if c.Stderr != nil {
 		cmd.Stderr = c.Stderr
 	}
+
+	cmd.Env = c.Env
 
 	return cmd.Run()
 }
