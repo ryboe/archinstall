@@ -6,6 +6,14 @@ net.core.default_qdisc=fq
 net.ipv4.tcp_congestion_control=bbr
 `
 
+	chromiumFlagsConf = `
+--enable-accelerated-video
+--enable-gpu-rasterization
+--enable-native-gpu-memory-buffers
+--enable-native-notifications
+--enable-zero-copy
+`
+
 	kbdrateService = `
 [Unit]
 Description=Set the keyboard repeat rate for the Linux console

@@ -249,6 +249,13 @@ func phase2() error {
 	}
 	log.Printf("owner of /home/%[1]s set to %[1]s\n", username)
 
+	log.Println("unmuting master volume control...")
+	err = unmuteAudio()
+	if err != nil {
+		return err
+	}
+	log.Println("master volume control unmuted")
+
 	return nil
 }
 
@@ -340,6 +347,8 @@ func installPkgs() error {
 	args := []string{
 		"-Sy",
 		"--noconfirm",
+		"alsa-utils",
+		"fzf",
 		"git",
 		"go",
 		"htop",
@@ -353,6 +362,8 @@ func installPkgs() error {
 		"noto-fonts-emoji",
 		"noto-fonts-extra",
 		"otf-font-awesome",
+		"pulseaudio",
+		"pulseaudio-alsa",
 		"rng-tools",
 		"rustup",
 		"sway",
@@ -510,18 +521,7 @@ func installRustUtils() (err error) {
 }
 
 func installi3Status() error {
-	err := cloneRustProject("greshake/i3status-rs")
-	if err != nil {
-		return err
-	}
-
-	dir := path.Join("/home", username, "rust/github.com/greshake/i3status-rs")
-	err = os.Chdir(dir)
-	if err != nil {
-		return err
-	}
-
-	return sh.Command(5*time.Minute, "cargo", "install").Run()
+	return sh.Command(2*time.Minute, "yay", "--noconfirm", "-Sy", "i3status-rust-git").Run()
 }
 
 func installRipgrep() (err error) {
@@ -660,5 +660,31 @@ func downloadFile(timeout time.Duration, dst, url string) (err error) {
 }
 
 func installChrome() error {
-	return sh.Command(5*time.Minute, "yay", "-Sy", "--noconfirm", "google-chrome").Run()
+	err := sh.Command(2*time.Hour, "yay", "-Sy", "--noconfirm", "chromium-vaapi").Run()
+	if err != nil {
+		return err
+	}
+
+	dst := path.Join("/home", username, ".config/chromium-flags.conf")
+
+	return ioutil.WriteFile(dst, []byte(chromiumFlagsConf[1:]), 0644)
+}
+
+func unmuteAudio() error {
+	err := sh.Command(10*time.Second, "pactl", "set-sink-mute", "0", "0").Run()
+	if err != nil {
+		return err
+	}
+
+	err = sh.Command(10*time.Second, "pactl", "set-sink-volume", "0", "50%").Run()
+	if err != nil {
+		return err
+	}
+
+	err = sh.Command(10*time.Second, "pactl", "set-source-mute", "1", "1").Run()
+	if err != nil {
+		return err
+	}
+
+	return sh.Command(10*time.Second, "pactl", "set-source-volume", "1", "50%").Run()
 }
