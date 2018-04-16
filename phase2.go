@@ -443,7 +443,7 @@ func configureFonts() error {
 
 	links := []string{
 		"10-hinting-full.conf",
-		"10-subpixel-rgb.conf",
+		"10-sub-pixel-rgb.conf",
 		"66-noto-mono.conf",
 		"66-noto-sans.conf",
 		"66-noto-serif.conf",
