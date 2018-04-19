@@ -136,12 +136,12 @@ func phase2() error {
 	}
 	log.Println("console font and keymap set")
 
-	log.Println("updating mkinitcpio.conf...")
-	err = configureMkinitcpio()
+	log.Println("updating initramfs...")
+	err = configureInitramfs()
 	if err != nil {
 		return err
 	}
-	log.Println("mkinitcpio.conf updated")
+	log.Println("initramfs updated")
 
 	log.Println("updating rngd configuration...")
 	err = ioutil.WriteFile("/etc/conf.d/rngd", []byte(rngd[1:]), 0644)
@@ -213,12 +213,12 @@ func phase2() error {
 	}
 	log.Println("AUR helper yay installed")
 
-	log.Println("installing chrome...")
-	err = installChrome()
+	log.Println("installing firefox...")
+	err = installFirefox()
 	if err != nil {
 		return err
 	}
-	log.Println("chrome installed")
+	log.Println("firefox installed")
 
 	log.Println("installing gitprompt...")
 	err = installGitprompt()
@@ -255,6 +255,13 @@ func phase2() error {
 		return err
 	}
 	log.Println("master volume control unmuted")
+
+	log.Println("installing GNOME...")
+	err = installGNOME()
+	if err != nil {
+		return err
+	}
+	log.Println("GNOME installed")
 
 	return nil
 }
@@ -348,6 +355,7 @@ func installPkgs() error {
 		"-Sy",
 		"--noconfirm",
 		"alsa-utils",
+		"freetype2-cleartype",
 		"fzf",
 		"git",
 		"go",
@@ -366,9 +374,7 @@ func installPkgs() error {
 		"pulseaudio-alsa",
 		"rng-tools",
 		"rustup",
-		"sway",
 		"terminus-font",
-		"termite",
 		"tree",
 		"ufw",
 		"vulkan-intel",
@@ -421,7 +427,7 @@ func loadKeymap() error {
 	return sh.Command(5*time.Second, "loadkeys", keymapName).Run()
 }
 
-func configureMkinitcpio() error {
+func configureInitramfs() error {
 	if err := ioutil.WriteFile("/etc/mkinitcpio.conf", []byte(mkinitcpioConf[1:]), 0644); err != nil {
 		return err
 	}
@@ -435,10 +441,16 @@ func configureFonts() error {
 		fontsAvailDir = "/etc/fonts/conf.avail/"
 	)
 
-	slightHintingSymlink := path.Join(fontsDir, "10-hinting-slight.conf")
-	err := os.Remove(slightHintingSymlink)
-	if err != nil {
-		return err
+	badLinks := []string{
+		"10-hinting-slight.conf",
+	}
+
+	for _, lnk := range badLinks {
+		badSymlink := path.Join(fontsDir, lnk)
+		err := os.Remove(badSymlink)
+		if err != nil {
+			return err
+		}
 	}
 
 	links := []string{
@@ -512,16 +524,7 @@ func installRustUtils() (err error) {
 		}
 	}()
 
-	err = installi3Status()
-	if err != nil {
-		return err
-	}
-
 	return installRipgrep()
-}
-
-func installi3Status() error {
-	return sh.Command(2*time.Minute, "yay", "--noconfirm", "-Sy", "i3status-rust-git").Run()
 }
 
 func installRipgrep() (err error) {
@@ -546,6 +549,7 @@ func installRipgrep() (err error) {
 
 	dst := path.Join("/home", username, ".cargo/bin/rg")
 	src := path.Join(dir, "target/release/rg")
+
 	return sh.Copy(dst, src)
 }
 
@@ -659,15 +663,8 @@ func downloadFile(timeout time.Duration, dst, url string) (err error) {
 	return err
 }
 
-func installChrome() error {
-	err := sh.Command(2*time.Hour, "yay", "-Sy", "--noconfirm", "chromium-vaapi").Run()
-	if err != nil {
-		return err
-	}
-
-	dst := path.Join("/home", username, ".config/chromium-flags.conf")
-
-	return ioutil.WriteFile(dst, []byte(chromiumFlagsConf[1:]), 0644)
+func installFirefox() error {
+	return sh.Command(10*time.Minute, "yay", "-Sy", "--noconfirm", "firefox").Run()
 }
 
 func unmuteAudio() error {
@@ -687,4 +684,8 @@ func unmuteAudio() error {
 	}
 
 	return sh.Command(10*time.Second, "pactl", "set-source-volume", "1", "50%").Run()
+}
+
+func installGNOME() error {
+	return sh.Command(30*time.Minute, "yay", "-Sy", "--noconfirm", "gnome").Run()
 }

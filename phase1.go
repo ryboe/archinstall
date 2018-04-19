@@ -47,19 +47,19 @@ func phase1() error {
 	}
 	log.Println("NTP enabled")
 
-	const numWorkers = 2
-	errc := make(chan error, numWorkers)
+	errc := make(chan error, 1)
 	go func() {
 		log.Println("updating mirrorlist...")
 		errc <- updateMirrorList()
 		log.Println("mirror list updated")
 	}()
 
-	go func() {
-		log.Println("updating /etc/makepkg.conf so pacman will build faster...")
-		errc <- editMakepkgConf()
-		log.Println("makepkg.conf updated on the installer")
-	}()
+	log.Println("updating /etc/makepkg.conf so pacman will build faster...")
+	err = editMakepkgConf()
+	if err != nil {
+		return err
+	}
+	log.Println("makepkg.conf updated on the installer")
 
 	log.Printf("partitioning %s...", targetDisk)
 	err = partitionDisk(targetDisk)
@@ -89,11 +89,10 @@ func phase1() error {
 	}
 	log.Println("partitions mounted")
 
-	for i := 0; i < numWorkers; i++ {
-		err = <-errc
-		if err != nil {
-			return err
-		}
+	// Wait the updateMirrorList() to complete before running pacstrap.
+	err = <-errc
+	if err != nil {
+		return err
 	}
 
 	log.Println("running pacstrap...")
